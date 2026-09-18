@@ -471,6 +471,118 @@ textarea.note-area:focus{border-color:var(--gold);}
 /* ---------------- Evidence store ---------------- */
 function uuid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c=='x'?r:(r&0x3|0x8);return v.toString(16);});}
 
+/* ---------------- Master Question Bank integration ----------------
+   Talks to EPL_MAIN_MASTER_QUESTION_BANK_ENGINE's Flask blueprint
+   (url_prefix /api/question-bank) once it's deployed in the main EPL app.
+   QUESTION_BANK_API_BASE is read from window.EPL_QUESTION_BANK_API_BASE so
+   the host page/agent can point this at the real deployment without editing
+   this file — empty string means same-origin relative calls. Until that
+   backend exists (or CORS isn't enabled for a cross-origin base), every call
+   below fails closed and the caller falls back to local practice content —
+   nothing here breaks the standalone demo before the backend is live.
+   SYLLABUS_NODE_ID matches the seeded leaf node in the handoff package
+   (seeds/quadratic_factorisation_50.json) so it starts working immediately
+   once that seed is loaded into a reachable database. */
+const QUESTION_BANK_API_BASE = (typeof window!=='undefined' && window.EPL_QUESTION_BANK_API_BASE) || '';
+const SYLLABUS_NODE_ID = (typeof window!=='undefined' && window.EPL_SYLLABUS_NODE_ID) || 'MATH-QUAD-FACTORISATION';
+
+async function qbFetchOptions(){
+  try{
+    const r = await fetch(`${QUESTION_BANK_API_BASE}/api/question-bank/practice/options/${encodeURIComponent(SYLLABUS_NODE_ID)}`);
+    if(!r.ok) return null;
+    const data = await r.json();
+    return Array.isArray(data) ? data.filter(o=>o.available>0 || o.code!=='PAST_PAPER') : null;
+  }catch(e){ return null; }
+}
+async function qbFetchNext(character){
+  try{
+    const r = await fetch(`${QUESTION_BANK_API_BASE}/api/question-bank/practice/next`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        session_id: EV.demo_session_id, student_id: EV.demo_session_id,
+        syllabus_node_id: SYLLABUS_NODE_ID, character, difficulty: 2,
+      }),
+    });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+async function qbCheck(questionId, response, attemptNumber){
+  try{
+    const r = await fetch(`${QUESTION_BANK_API_BASE}/api/question-bank/practice/check`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        session_id: EV.demo_session_id, student_id: EV.demo_session_id,
+        syllabus_node_id: SYLLABUS_NODE_ID, question_id: questionId,
+        student_response: response, attempt_number: attemptNumber,
+      }),
+    });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+/* Renders one question fetched from the Master Question Bank. The check
+   endpoint intentionally withholds the worked solution until the answer is
+   correct (see question_answer_checker.py), so after 3 wrong attempts this
+   offers "Move On" rather than fabricating a solution the API never sent —
+   a real reveal-after-N-attempts endpoint is a good addition for whoever
+   wires the backend (hints_json already carries show_solution_after_attempt). */
+function askServerQuestion(container, question){
+  return new Promise(resolve=>{
+    let provenance = '';
+    if(question.appeared_in){
+      const p = question.appeared_in;
+      provenance = ` (Appeared in ${p.board} · ${p.qualification} · ${p.year} · ${p.paper_code} · Q${p.question_number})`;
+    }
+    teacherBlock(container, question.payload.prompt + provenance).then(()=>{
+      const iw=document.createElement('div'); iw.className='interaction fade-in'; container.appendChild(iw);
+      const inp=document.createElement('input'); inp.className='answer-input'; inp.placeholder='Type your answer…';
+      const sb=document.createElement('button'); sb.className='primary-btn'; sb.textContent='Submit'; sb.style.marginTop='8px';
+      iw.appendChild(inp); iw.appendChild(sb);
+      let attempt=0, submitting=false;
+      async function submit(){
+        if(!inp.value.trim() || submitting) return;
+        submitting = true;
+        attempt++;
+        const val=inp.value.trim();
+        inp.disabled=true; sb.disabled=true;
+        const fb=document.createElement('div'); fb.className='feedback fade-in'; iw.appendChild(fb);
+        fb.innerHTML = `<div class="small-muted">Checking…</div>`;
+        const res = await qbCheck(question.question_id, val, attempt);
+        fb.innerHTML='';
+        if(!res){
+          fb.innerHTML = `<div class="hint-box">💬 Couldn't reach the question bank just now — let's carry on.</div>`;
+          const cont=document.createElement('button'); cont.className='primary-btn'; cont.textContent='Continue';
+          cont.onclick=()=>resolve({attempts:attempt,hintDepth:0,unreachable:true});
+          fb.appendChild(cont);
+          return;
+        }
+        if(res.correct){
+          fb.innerHTML = `<div class="correct-badge">Correct ✓</div>`+(res.message?`<p>${res.message}</p>`:'');
+          const cont=document.createElement('button'); cont.className='primary-btn'; cont.textContent='Continue';
+          cont.onclick=()=>{ recordAnswer('Practice', question.question_id, val, true, attempt, res.hint_level||0, 'Question Bank'); resolve({attempts:attempt,hintDepth:res.hint_level||0}); };
+          fb.appendChild(cont);
+        } else {
+          recordAnswer('Practice', question.question_id, val, false, attempt, res.hint_level||attempt, 'Question Bank');
+          fb.innerHTML = `<div class="hint-box">💬 ${res.hint||"Let's try that again."}</div>`;
+          const btnRow=document.createElement('div'); btnRow.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;';
+          const retry=document.createElement('button'); retry.className='secondary-btn'; retry.textContent='Try Again';
+          retry.onclick=()=>{ fb.remove(); submitting=false; inp.disabled=false; sb.disabled=false; inp.value=''; inp.focus(); };
+          btnRow.appendChild(retry);
+          if(attempt>=3){
+            const skip=document.createElement('button'); skip.className='gold-btn'; skip.textContent='Move On';
+            skip.onclick=()=>resolve({attempts:attempt,hintDepth:res.hint_level||3,skipped:true});
+            btnRow.appendChild(skip);
+          }
+          fb.appendChild(btnRow);
+        }
+      }
+      sb.onclick=submit;
+      inp.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+    });
+  });
+}
+
 let EV = {
   demo_session_id: uuid(),
   student_name: '',
@@ -1641,19 +1753,48 @@ async function screenPractice(){
       c.appendChild(row);
     });
     if(wantsMore){
-      const q = PRACTICE_EXTRA[idx % PRACTICE_EXTRA.length];
-      await askInput(slide(SEC), {
-        id:q.id+'_more'+idx, section:'Practice',
-        stem:`Extra practice: `+q.stem,
-        checkFn:v=>sameRootSet(v,q.correct),
-        explanation:q.explanation, hints:q.hints,
-        placeholder:'e.g. −3, 7',
-      });
-      completed++; idx++;
-      EV.practice.questions_completed = completed;
-      EV.practice.log.push(q.id);
-      EV.practice.active_seconds = EV.section_active_seconds['Practice + Application']||0;
-      saveEvidence();
+      const options = await qbFetchOptions();
+      let servedFromBank = false;
+      if(options && options.length){
+        const character = await new Promise(res=>{
+          const c = slide(SEC);
+          const p=document.createElement('p'); p.style.cssText='font-weight:700;color:var(--navy);margin:0 0 10px;'; p.textContent='What kind of practice would you like?';
+          c.appendChild(p);
+          const row=document.createElement('div'); row.className='badge-row';
+          options.forEach(o=>{
+            const b=document.createElement('button'); b.className='opt-pill'; b.textContent=o.label;
+            b.onclick=()=>res(o.code);
+            row.appendChild(b);
+          });
+          c.appendChild(row);
+        });
+        const q = await qbFetchNext(character);
+        if(q && q.payload){
+          await askServerQuestion(slide(SEC), q);
+          completed++; idx++;
+          EV.practice.questions_completed = completed;
+          EV.practice.log.push(q.question_id);
+          EV.practice.active_seconds = EV.section_active_seconds['Practice + Application']||0;
+          saveEvidence();
+          servedFromBank = true;
+        }
+      }
+      if(!servedFromBank){
+        // Question bank not reachable yet (not deployed, or CORS not enabled from this origin) — local fallback.
+        const q = PRACTICE_EXTRA[idx % PRACTICE_EXTRA.length];
+        await askInput(slide(SEC), {
+          id:q.id+'_more'+idx, section:'Practice',
+          stem:`Extra practice: `+q.stem,
+          checkFn:v=>sameRootSet(v,q.correct),
+          explanation:q.explanation, hints:q.hints,
+          placeholder:'e.g. −3, 7',
+        });
+        completed++; idx++;
+        EV.practice.questions_completed = completed;
+        EV.practice.log.push(q.id);
+        EV.practice.active_seconds = EV.section_active_seconds['Practice + Application']||0;
+        saveEvidence();
+      }
     }
   }
 }
