@@ -146,7 +146,7 @@ body{
 #liveScreen, #reviewScreen{display:flex;flex-direction:column;gap:16px;padding-bottom:30px;}
 #reviewScreen{display:none;position:relative;}
 #reviewBanner{
-  position:sticky;top:64px;z-index:20;
+  position:sticky;top:0;z-index:20;
   background:var(--warn-bg);border:1px solid #EAC79A;color:var(--warn);
   padding:9px 14px;border-radius:10px;font-size:13px;font-weight:700;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -527,6 +527,7 @@ function goBack(){
   liveEl.style.display='none';
   reviewOuter.style.display='flex';
   inReview = true;
+  syncReviewBannerOffset();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function returnToLive(){
@@ -535,6 +536,14 @@ function returnToLive(){
   inReview = false;
   window.scrollTo({top:0, behavior:'smooth'});
 }
+function syncReviewBannerOffset(){
+  const topbar = document.getElementById('topbar');
+  const banner = document.getElementById('reviewBanner');
+  if(topbar && banner){ banner.style.top = topbar.offsetHeight + 'px'; }
+}
+window.addEventListener('resize', syncReviewBannerOffset);
+window.addEventListener('load', syncReviewBannerOffset);
+syncReviewBannerOffset();
 
 /* ---------------- Progressive teacher speech ---------------- */
 const REDUCE_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -817,6 +826,38 @@ function sectionCard(){
   const c=document.createElement('div'); c.className='card fade-in';
   return c;
 }
+/* Every call creates a brand-new, full-screen slide (via newStep) with its own
+   section-label header — this is what makes each teacher line / question its
+   own "slide" instead of everything piling into one long scrolling card. */
+function slide(sectionLabel){
+  const el = newStep({_prevLabel: sectionLabel || 'Previous step'});
+  const c = document.createElement('div'); c.className='card fade-in';
+  if(sectionLabel){
+    const lbl = document.createElement('div'); lbl.className='section-label'; lbl.textContent = sectionLabel;
+    c.appendChild(lbl);
+  }
+  el.appendChild(c);
+  return c;
+}
+/* One teacher line (+ optional extra HTML, e.g. an equation or summary grid) on
+   its own slide, with an explicit Continue button the student taps to advance —
+   this is what makes narrative moments feel like slides instead of auto-playing. */
+function infoSlide(sectionLabel, text, opts={}){
+  return new Promise(resolve=>{
+    const c = slide(sectionLabel);
+    teacherBlock(c, text).then(()=>{
+      if(opts.html){
+        const body=document.createElement('div'); body.className='fade-in'; body.style.marginTop='6px';
+        body.innerHTML = opts.html;
+        c.appendChild(body);
+      }
+      const btn=document.createElement('button'); btn.className='primary-btn fade-in'; btn.style.marginTop='16px';
+      btn.textContent = opts.continueLabel || 'Continue';
+      btn.onclick=()=>resolve(c);
+      c.appendChild(btn);
+    });
+  });
+}
 
 /* ================= FLOW ================= */
 let STUDENT_NAME='';
@@ -960,17 +1001,14 @@ function screenNameEntry(){
 
 /* ---- 3. Opening ---- */
 async function screenOpening(){
-  const el = newStep({_prevLabel:'Name entry'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Welcome</div>`;
-  el.appendChild(c);
-
-  await teacherBlock(c, `Hi ${STUDENT_NAME}! I'm Emaan, and I'll be your Mathematics teacher today. 😊 I'm really happy to be teaching you! I'll walk you through everything step by step, share plenty of examples, ask you fun questions along the way, check your work, and I'll always be right here to help whenever something feels tricky. Let's make today a great learning day!`);
-  await teacherBlock(c, `During class, you can ask me a Mathematics question whenever you need help.`);
-  await teacherBlock(c, `Our goal isn't just to show you Mathematics — it's to help you truly understand it! Together, we'll try things out, learn from any mistakes along the way, practise until it clicks, and get you confident enough to use it all on your own.`);
+  const SEC = 'Welcome';
+  await infoSlide(SEC, `Hi ${STUDENT_NAME}! I'm Emaan, and I'll be your Mathematics teacher today. 😊 I'm really happy to be teaching you! I'll walk you through everything step by step, share plenty of examples, ask you fun questions along the way, check your work, and I'll always be right here to help whenever something feels tricky. Let's make today a great learning day!`);
+  await infoSlide(SEC, `During class, you can ask me a Mathematics question whenever you need help.`);
+  await infoSlide(SEC, `Our goal isn't just to show you Mathematics — it's to help you truly understand it! Together, we'll try things out, learn from any mistakes along the way, practise until it clicks, and get you confident enough to use it all on your own.`);
 
   // Warm-up check-in — not graded, just moves the conversation forward either way.
   await new Promise(resolve=>{
+    const c = slide(SEC);
     teacherBlock(c, `Do you know the purpose of today's class?`).then(()=>{
       const iw=document.createElement('div'); iw.className='interaction fade-in'; c.appendChild(iw);
       const grid=document.createElement('div'); grid.className='opt-grid two'; iw.appendChild(grid);
@@ -988,7 +1026,7 @@ async function screenOpening(){
     });
   });
 
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'opening_purpose_question',
     section:'Opening',
     stem: `Do you know the purpose of today's class?`,
@@ -1009,7 +1047,7 @@ async function screenOpening(){
     ],
   });
 
-  await continueBtn(c, 'Begin Class');
+  await continueBtn(slide(SEC), 'Begin Class');
 }
 
 /* ---- 4. Recall ---- */
@@ -1051,24 +1089,19 @@ const RECALL_LADDER = [
 ];
 
 async function screenRecall(){
-  const el = newStep({_prevLabel:'Opening'});
+  const SEC = 'Recall';
   startSectionTimer('Recall', 3, {}); // protected minimum 3 active minutes; guide, not hard cutoff
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Recall</div>`;
-  el.appendChild(c);
-
-  await teacherBlock(c, `Because this is your first EPL class with us, we don't yet know how much you understand. Let's begin with a few questions on Simultaneous Equations. If you do well, I'll make the questions harder.`);
+  await infoSlide(SEC, `Because this is your first EPL class with us, we don't yet know how much you understand. Let's begin with a few questions on Simultaneous Equations. If you do well, I'll make the questions harder.`);
 
   let idx = 0;
   let questionsAsked = 0;
   while(true){
     const q = RECALL_LADDER[Math.min(idx, RECALL_LADDER.length-1)];
-    const block = document.createElement('div'); block.className='fade-in'; c.appendChild(block);
     let result;
     if(q.type==='input'){
-      result = await askInput(block, {stem:q.stem, checkFn:q.check, explanation:q.explanation, hints:q.hints, id:q.id, section:'Recall'});
+      result = await askInput(slide(SEC), {stem:q.stem, checkFn:q.check, explanation:q.explanation, hints:q.hints, id:q.id, section:'Recall'});
     } else {
-      result = await askMCQ(block, {stem:q.stem, options:q.options, correctValue:q.correct, explanation:q.explanation, hints:q.hints, id:q.id, section:'Recall'});
+      result = await askMCQ(slide(SEC), {stem:q.stem, options:q.options, correctValue:q.correct, explanation:q.explanation, hints:q.hints, id:q.id, section:'Recall'});
     }
     questionsAsked++;
     idx = result.attempts===1 ? idx+2 : idx+1; // correct first try -> jump ahead (harder); needed hints -> step up gently
@@ -1081,36 +1114,27 @@ async function screenRecall(){
   EV.section_summaries['Recall'] = {questions_attempted:questionsAsked};
   saveEvidence();
   pauseSectionTimer();
-  await teacherBlock(c, `That gives me a good starting picture of where you are. Let's move on to today's main topic.`);
-  await continueBtn(c, 'Continue to Learning');
+  await infoSlide(SEC, `That gives me a good starting picture of where you are. Let's move on to today's main topic.`, {continueLabel:'Continue to Learning'});
   endSectionTimer();
 }
 
 /* ---- 5. Learning intro / rundown ---- */
 async function screenLearningIntro(){
-  const el = newStep({_prevLabel:'Recall'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Learning + Understanding</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `Now we're going to learn Quadratic Equations. This part of our class will take approximately 20 minutes. We're not going to learn everything at once. I'll take you through it step by step, and you'll be doing things with me along the way.`);
-  const rd = document.createElement('div'); rd.className='rundown fade-in';
+  const SEC = 'Learning + Understanding';
+  await infoSlide(SEC, `Now we're going to learn Quadratic Equations. This part of our class will take approximately 20 minutes. We're not going to learn everything at once. I'll take you through it step by step, and you'll be doing things with me along the way.`);
   const steps = ['Understand It','Spot It','See How It Works','Try It With Me','Make Your Note','Try It Yourself','Check Your Understanding'];
-  rd.innerHTML = steps.map((s,i)=>`<div class="rundown-item"><span class="num">${i+1}</span>${s}</div>`).join('');
-  c.appendChild(rd);
-  await teacherBlock(c, `You don't need to understand everything immediately. That's what these 20 minutes are for.`);
-  await continueBtn(c, "Let's Begin");
+  const rundownHtml = `<div class="rundown">${steps.map((s,i)=>`<div class="rundown-item"><span class="num">${i+1}</span>${s}</div>`).join('')}</div>`;
+  await infoSlide(SEC, `Here's how we'll get there:`, {html: rundownHtml});
+  await infoSlide(SEC, `You don't need to understand everything immediately. That's what these 20 minutes are for.`, {continueLabel:"Let's Begin"});
 }
 
 /* ---- 6. Learning content (sections 7-9) ---- */
 async function screenLearningContent(){
-  const el = newStep({_prevLabel:'Learning rundown'});
+  const SEC = 'Understand It';
   startSectionTimer('Learning + Understanding', 20);
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Understand It</div>`;
-  el.appendChild(c);
 
   // 7.1 First interaction
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'learn_which_different', section:'Learning',
     stem: `Take a look at these three: A. x + 5 = 12    B. x² + 5x + 6 = 0    C. 2x + 3y = 10. Which one looks different from the other two?`,
     options:[{label:'A. x + 5 = 12', value:'A'},{label:'B. x² + 5x + 6 = 0', value:'B'},{label:'C. 2x + 3y = 10', value:'C'}],
@@ -1120,28 +1144,24 @@ async function screenLearningContent(){
   });
 
   // 7.2 Simple definition
-  const p1=document.createElement('div'); p1.className='fade-in'; c.appendChild(p1);
-  await teacherBlock(p1, `A quadratic equation is an equation where the variable is multiplied by itself. So you will usually see something like x². x² simply means x × x.`);
-  const microWrap=document.createElement('div'); microWrap.className='eq-block fade-in';
-  microWrap.innerHTML = `<div class="eq">x + 4</div><div class="eq">x² + 4</div><div class="eq">2x + 4</div>`;
-  p1.appendChild(microWrap);
-  await continueBtn(p1, 'I see the difference');
+  await infoSlide(SEC, `A quadratic equation is an equation where the variable is multiplied by itself. So you will usually see something like x². x² simply means x × x.`, {
+    html: `<div class="eq-block"><div class="eq">x + 4</div><div class="eq">x² + 4</div><div class="eq">2x + 4</div></div>`,
+    continueLabel: 'I see the difference',
+  });
 
   // 7.3 Formal definition
-  const p2=document.createElement('div'); p2.className='fade-in'; c.appendChild(p2);
-  await teacherBlock(p2, `A quadratic equation is an equation in which the highest power of the variable is 2.`);
-  const labelWrap = document.createElement('div'); labelWrap.className='fade-in';
-  labelWrap.innerHTML = `<div class="eq">x² + 5x + 6 = 0</div>
-    <div class="summary-grid" style="margin-top:10px;">
-      <div class="summary-item"><b>x²</b>quadratic term</div>
-      <div class="summary-item"><b>5x</b>linear term</div>
-      <div class="summary-item"><b>6</b>constant</div>
-    </div>`;
-  p2.appendChild(labelWrap);
-  await continueBtn(p2, 'Got it');
+  await infoSlide(SEC, `A quadratic equation is an equation in which the highest power of the variable is 2.`, {
+    html: `<div class="eq">x² + 5x + 6 = 0</div>
+      <div class="summary-grid" style="margin-top:10px;">
+        <div class="summary-item"><b>x²</b>quadratic term</div>
+        <div class="summary-item"><b>5x</b>linear term</div>
+        <div class="summary-item"><b>6</b>constant</div>
+      </div>`,
+    continueLabel: 'Got it',
+  });
 
   // 7.4 Spot the trap
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'learn_spot_trap', section:'Learning', twoCol:true,
     stem: `Let's spot the quadratic. A. x + 7 = 0   B. x² + 6x + 5 = 0   C. x³ + x² + 2 = 0   D. 5x − 3 = 12. Which one is the quadratic equation?`,
     options:[{label:'A. x + 7 = 0',value:'A'},{label:'B. x² + 6x + 5 = 0',value:'B'},{label:'C. x³ + x² + 2 = 0',value:'C'},{label:'D. 5x − 3 = 12',value:'D'}],
@@ -1154,32 +1174,28 @@ async function screenLearningContent(){
   });
 
   // 7.5 Standard form
-  const p3=document.createElement('div'); p3.className='fade-in'; c.appendChild(p3);
-  await teacherBlock(p3, `Now let's meet the standard form every quadratic equation can be written in:`);
-  const sf=document.createElement('div'); sf.className='fade-in';
-  sf.innerHTML = `<div class="eq">ax² + bx + c = 0</div>
-    <div class="summary-grid" style="margin-top:10px;">
-      <div class="summary-item"><b>ax²</b>quadratic term</div>
-      <div class="summary-item"><b>bx</b>linear term</div>
-      <div class="summary-item"><b>c</b>constant</div>
-    </div>`;
-  p3.appendChild(sf);
-  await continueBtn(p3, 'Show me an example');
+  await infoSlide(SEC, `Now let's meet the standard form every quadratic equation can be written in:`, {
+    html: `<div class="eq">ax² + bx + c = 0</div>
+      <div class="summary-grid" style="margin-top:10px;">
+        <div class="summary-item"><b>ax²</b>quadratic term</div>
+        <div class="summary-item"><b>bx</b>linear term</div>
+        <div class="summary-item"><b>c</b>constant</div>
+      </div>`,
+    continueLabel: 'Show me an example',
+  });
 
-  const p4=document.createElement('div'); p4.className='fade-in'; c.appendChild(p4);
-  await teacherBlock(p4, `In x² + 6x + 5 = 0, a = 1 (there's a hidden 1 in front of x²), b = 6, and c = 5.`);
-  const exWrap=document.createElement('div'); exWrap.className='fade-in';
-  exWrap.innerHTML = `<div class="eq">x² + 6x + 5 = 0</div>
-    <div class="summary-grid" style="margin-top:10px;">
-      <div class="summary-item"><b>a = 1</b>hidden in front of x²</div>
-      <div class="summary-item"><b>b = 6</b>coefficient of x</div>
-      <div class="summary-item"><b>c = 5</b>the constant</div>
-    </div>`;
-  p4.appendChild(exWrap);
-  await continueBtn(p4, 'Now let me try one');
+  await infoSlide(SEC, `In x² + 6x + 5 = 0, a = 1 (there's a hidden 1 in front of x²), b = 6, and c = 5.`, {
+    html: `<div class="eq">x² + 6x + 5 = 0</div>
+      <div class="summary-grid" style="margin-top:10px;">
+        <div class="summary-item"><b>a = 1</b>hidden in front of x²</div>
+        <div class="summary-item"><b>b = 6</b>coefficient of x</div>
+        <div class="summary-item"><b>c = 5</b>the constant</div>
+      </div>`,
+    continueLabel: 'Now let me try one',
+  });
 
   // Student example with abc, sign trap on c
-  await askABC(c, {
+  await askABC(slide(SEC), {
     id:'learn_abc_sign_trap', section:'Learning',
     stem: `Your turn. For 2x² + 7x − 4 = 0, what are a, b and c? Remember: the sign travels with the number.`,
     correctA:2, correctB:7, correctC:-4,
@@ -1189,12 +1205,11 @@ async function screenLearningContent(){
   });
 
   // Section 8: Factorisation learning cycle
-  const p5=document.createElement('div'); p5.className='fade-in'; c.appendChild(p5);
-  await teacherBlock(p5, `Now let's see how to actually solve one of these. We'll use x² + 5x + 6 = 0.`);
-  p5.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'x² + 5x + 6 = 0'}));
-  await continueBtn(p5, 'Continue');
+  await infoSlide(SEC, `Now let's see how to actually solve one of these. We'll use x² + 5x + 6 = 0.`, {
+    html: `<div class="eq">x² + 5x + 6 = 0</div>`,
+  });
 
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'learn_factor_pair', section:'Learning',
     stem: `We need two numbers that multiply to make 6 (the constant). Which pair works?`,
     options:[{label:'1 and 6', value:'16'},{label:'2 and 3', value:'23'},{label:'−2 and 3', value:'-23'}],
@@ -1203,12 +1218,12 @@ async function screenLearningContent(){
     hints:[`Try each pair: does it multiply to 6? Then check whether it also adds to 5, the middle number.`],
   });
 
-  const p6=document.createElement('div'); p6.className='fade-in'; c.appendChild(p6);
-  await teacherBlock(p6, `So we can write x² + 5x + 6 = 0 as two brackets multiplied together:`);
-  p6.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'(x + 2)(x + 3) = 0'}));
-  await continueBtn(p6, 'What does that mean?');
+  await infoSlide(SEC, `So we can write x² + 5x + 6 = 0 as two brackets multiplied together:`, {
+    html: `<div class="eq">(x + 2)(x + 3) = 0</div>`,
+    continueLabel: 'What does that mean?',
+  });
 
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'learn_zero_product_micro', section:'Learning',
     stem: `Here's the key idea behind factorising: if two things multiply to give zero, at least one of them must be zero. Which of these multiplications equals zero?`,
     options:[{label:'4 × 2', value:'a'},{label:'7 × 0', value:'b'},{label:'3 × 5', value:'c'}],
@@ -1217,18 +1232,18 @@ async function screenLearningContent(){
     hints:[`Which of the three multiplications actually includes a zero?`],
   });
 
-  const p7=document.createElement('div'); p7.className='fade-in'; c.appendChild(p7);
-  await teacherBlock(p7, `So (x + 2)(x + 3) = 0 means one of the brackets must equal zero: either x + 2 = 0, or x + 3 = 0.`);
-  await continueBtn(p7, 'Solve the first bracket with me');
+  await infoSlide(SEC, `So (x + 2)(x + 3) = 0 means one of the brackets must equal zero: either x + 2 = 0, or x + 3 = 0.`, {
+    continueLabel: 'Solve the first bracket with me',
+  });
 
-  await askInput(c, {
+  await askInput(slide(SEC), {
     id:'learn_solve_bracket1', section:'Learning',
     stem: `If x + 2 = 0, what is x? Remember: whatever we do, we do the same operation to both sides.`,
     checkFn:v=>numEquals(v,-2),
     explanation:[`x + 2 − 2 = 0 − 2, so x = −2. We didn't "move it across" — we subtracted 2 from both sides.`],
     hints:[`What do you need to subtract from both sides to leave x on its own?`,`Subtract 2 from both sides: x + 2 − 2 = 0 − 2.`],
   });
-  await askInput(c, {
+  await askInput(slide(SEC), {
     id:'learn_solve_bracket2', section:'Learning',
     stem: `Now you try the second bracket: if x + 3 = 0, what is x?`,
     checkFn:v=>numEquals(v,-3),
@@ -1237,12 +1252,11 @@ async function screenLearningContent(){
   });
 
   // Section 9: Guided solve
-  const p8=document.createElement('div'); p8.className='fade-in'; c.appendChild(p8);
-  await teacherBlock(p8, `Let's put it all together on a new equation: x² + 7x + 12 = 0.`);
-  p8.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'x² + 7x + 12 = 0'}));
-  await continueBtn(p8, 'Continue');
+  await infoSlide(SEC, `Let's put it all together on a new equation: x² + 7x + 12 = 0.`, {
+    html: `<div class="eq">x² + 7x + 12 = 0</div>`,
+  });
 
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'guided_pairs_1', section:'Learning', twoCol:true,
     stem:`Which pair of numbers multiplies to 12 AND adds to 7?`,
     options:[{label:'2 and 6', value:'a'},{label:'3 and 4', value:'b'},{label:'1 and 12', value:'c'},{label:'−3 and −4', value:'d'}],
@@ -1250,7 +1264,7 @@ async function screenLearningContent(){
     explanation:[`3 and 4 multiply to 12 and add to 7 — both checks pass.`],
     hints:[`Check each pair against both rules: multiply to make 12, and add to make 7. Only one pair passes both.`],
   });
-  await askInput(c, {
+  await askInput(slide(SEC), {
     id:'guided_roots_1', section:'Learning',
     stem:`So (x + 3)(x + 4) = 0. What are the two roots? (type both, e.g. "−3, −4")`,
     checkFn:v=>sameRootSet(v,[-3,-4]),
@@ -1259,11 +1273,10 @@ async function screenLearningContent(){
     rule:`Golden rule: multiply to make the constant, add to make the middle coefficient.`,
   });
 
-  const p9=document.createElement('div'); p9.className='fade-in'; c.appendChild(p9);
-  await teacherBlock(p9, `Now a small twist — signs matter. Try x² − 7x + 12 = 0.`);
-  p9.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'x² − 7x + 12 = 0'}));
-  await continueBtn(p9, 'Continue');
-  await askInput(c, {
+  await infoSlide(SEC, `Now a small twist — signs matter. Try x² − 7x + 12 = 0.`, {
+    html: `<div class="eq">x² − 7x + 12 = 0</div>`,
+  });
+  await askInput(slide(SEC), {
     id:'guided_roots_2', section:'Learning',
     stem:`Factorise and solve: what are the two roots of x² − 7x + 12 = 0?`,
     checkFn:v=>sameRootSet(v,[3,4]),
@@ -1271,11 +1284,10 @@ async function screenLearningContent(){
     hints:[`This time the numbers you need multiply to 12 but add to −7 — think negative pairs.`,`−3 and −4 multiply to 12 and add to −7.`],
   });
 
-  const p10=document.createElement('div'); p10.className='fade-in'; c.appendChild(p10);
-  await teacherBlock(p10, `Last one for this cycle — a mixed-sign example: x² + x − 6 = 0.`);
-  p10.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'x² + x − 6 = 0'}));
-  await continueBtn(p10, 'Continue');
-  await askInput(c, {
+  await infoSlide(SEC, `Last one for this cycle — a mixed-sign example: x² + x − 6 = 0.`, {
+    html: `<div class="eq">x² + x − 6 = 0</div>`,
+  });
+  await askInput(slide(SEC), {
     id:'guided_roots_3', section:'Learning',
     stem:`Factorise and solve x² + x − 6 = 0. What are the two roots?`,
     checkFn:v=>sameRootSet(v,[-3,2]),
@@ -1289,10 +1301,7 @@ async function screenLearningContent(){
 
 /* ---- 7. Make Your Note ---- */
 async function screenMakeYourNote(){
-  const el = newStep({_prevLabel:'Learning content'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Make Your Note</div>`;
-  el.appendChild(c);
+  const c = slide('Make Your Note');
   await teacherBlock(c, `Before we move on, I want you to explain what you've just learned in your own words. Your note doesn't need to sound like a textbook.`);
   const promptEl=document.createElement('div'); promptEl.className='fade-in';
   promptEl.innerHTML = `<p style="font-weight:700;color:var(--navy);">Explain the steps for solving a quadratic equation by factorising.</p>`;
@@ -1328,10 +1337,7 @@ async function screenMakeYourNote(){
 
 /* ---- 8. Learning summary / definitions ---- */
 async function screenLearningSummary(){
-  const el = newStep({_prevLabel:'Make Your Note'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">What We've Learned</div>`;
-  el.appendChild(c);
+  const c = slide('What We\'ve Learned');
   const grid=document.createElement('div'); grid.className='summary-grid fade-in';
   grid.innerHTML = `
     <div class="summary-item"><b>Quadratic Equation</b>an equation where the highest power of the variable is 2.</div>
@@ -1368,18 +1374,14 @@ const UC_QUESTIONS = [
    hints:[`Multiply the coefficient of x² by the constant: 3 × (−2).`,`Find two numbers that multiply to −6 and add to −5 (−6 and +1), then split and group.`]},
 ];
 async function screenUnderstandingCheck(){
-  const el = newStep({_prevLabel:'Learning Summary'});
+  const SEC = 'Check Your Understanding';
   startSectionTimer('Understanding Check', 5);
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Check Your Understanding</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `Now it's your turn to try these independently. Give each one your best first attempt — I won't give a hint unless you need one.`);
+  await infoSlide(SEC, `Now it's your turn to try these independently. Give each one your best first attempt — I won't give a hint unless you need one.`);
 
   let qi=0;
   while(qi < UC_QUESTIONS.length || !sectionElapsedMinutesOK(5)){
     const q = qi < UC_QUESTIONS.length ? UC_QUESTIONS[qi] : extraCheckQuestion(qi-UC_QUESTIONS.length);
-    const block=document.createElement('div'); block.className='fade-in'; c.appendChild(block);
-    await askInput(block, {
+    await askInput(slide(SEC), {
       id:q.id, section:'Understanding Check',
       stem: q.stem,
       checkFn: v=>sameRootSet(v,q.correct),
@@ -1416,10 +1418,7 @@ function extraCheckQuestion(n){
 /* ---- 10. Understanding Result / Routing ---- */
 let needsCorrective = false;
 async function screenRouting(){
-  const el = newStep({_prevLabel:'Understanding Check'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Your Results</div>`;
-  el.appendChild(c);
+  const c = slide('Your Results');
   await teacherBlock(c, `Good work. I've checked how you solved the questions — not just your final answers, but also where you needed some help.`);
 
   const ucAnswers = EV.answers.filter(a=>a.section==='Understanding Check');
@@ -1449,15 +1448,12 @@ async function screenRouting(){
 
 /* ---- 11. Corrective Support (conditional) ---- */
 async function screenCorrectiveSupport(){
-  const el = newStep({_prevLabel:'Your Results'});
+  const SEC = 'Corrective Support';
   startSectionTimer('Corrective Support', 4);
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Corrective Support</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `I know exactly where we need a little more work. You understood the basic method, but the signs became tricky when one number was positive and the other was negative.`);
-  await teacherBlock(c, `We're not going to repeat the whole lesson. We'll fix just this part, then I'll give you another chance to do it yourself.`);
+  await infoSlide(SEC, `I know exactly where we need a little more work. You understood the basic method, but the signs became tricky when one number was positive and the other was negative.`);
+  await infoSlide(SEC, `We're not going to repeat the whole lesson. We'll fix just this part, then I'll give you another chance to do it yourself.`);
 
-  await askMCQ(c, {
+  await askMCQ(slide(SEC), {
     id:'corrective_multiply', section:'Corrective Support',
     stem:`(+3) × (−5) = ?`,
     options:[{label:'+15', value:'p'},{label:'−15', value:'n'}],
@@ -1465,7 +1461,7 @@ async function screenCorrectiveSupport(){
     explanation:[`A positive times a negative gives a negative: (+3) × (−5) = −15.`],
     hints:[`When multiplying a positive and a negative number, the answer is always negative.`],
   });
-  await askInput(c, {
+  await askInput(slide(SEC), {
     id:'corrective_add', section:'Corrective Support',
     stem:`Now: (+3) + (−5) = ?`,
     checkFn:v=>numEquals(v,-2),
@@ -1473,14 +1469,12 @@ async function screenCorrectiveSupport(){
     hints:[`Adding a negative number is the same as subtracting: 3 − 5.`],
   });
 
-  const conn=document.createElement('div'); conn.className='fade-in';
-  await teacherBlock(conn, `Now let's connect that directly to the equation: x² − 2x − 15 = 0.`);
-  conn.appendChild(Object.assign(document.createElement('div'),{className:'eq fade-in', innerHTML:'+3 × −5 = −15&nbsp;&nbsp;&nbsp;+3 + −5 = −2'}));
-  c.appendChild(conn);
-  await continueBtn(conn, 'Both checks work — continue');
+  await infoSlide(SEC, `Now let's connect that directly to the equation: x² − 2x − 15 = 0.`, {
+    html: `<div class="eq">+3 × −5 = −15&nbsp;&nbsp;&nbsp;+3 + −5 = −2</div>`,
+    continueLabel: 'Both checks work — continue',
+  });
 
-  const recheck=document.createElement('div'); recheck.className='fade-in'; c.appendChild(recheck);
-  const res = await askInput(recheck, {
+  const res = await askInput(slide(SEC), {
     id:'corrective_recheck', section:'Corrective Support',
     stem:`Let's check you've got it: x² − x − 12 = 0 — factorise and give both roots.`,
     checkFn:v=>sameRootSet(v,[-3,4]),
@@ -1491,7 +1485,7 @@ async function screenCorrectiveSupport(){
   saveEvidence();
   pauseSectionTimer();
   endSectionTimer();
-  await continueBtn(c, 'Continue to Practice');
+  await continueBtn(slide(SEC), 'Continue to Practice');
 }
 
 /* ---- 12. Practice + Application ---- */
@@ -1530,19 +1524,15 @@ const PRACTICE_EXTRA = [
    hints:[`121 is a perfect square (11 × 11) with no middle term.`]},
 ];
 async function screenPractice(){
-  const el = newStep({_prevLabel:'Corrective Support / Results'});
+  const SEC = 'Practice + Application';
   startSectionTimer('Practice + Application', 8);
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Practice + Application</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `Now let's put everything together with some practice questions. Take your time and show me what you can do.`);
+  await infoSlide(SEC, `Now let's put everything together with some practice questions. Take your time and show me what you can do.`);
 
   let completed = 0;
   let idx = 0;
   while(true){
     const q = idx < PRACTICE_BANK.length ? PRACTICE_BANK[idx] : PRACTICE_EXTRA[(idx-PRACTICE_BANK.length) % PRACTICE_EXTRA.length];
-    const block=document.createElement('div'); block.className='fade-in'; c.appendChild(block);
-    await askInput(block, {
+    await askInput(slide(SEC), {
       id:q.id, section:'Practice',
       stem:`Q${idx+1}. `+q.stem,
       checkFn:v=>sameRootSet(v,q.correct),
@@ -1560,32 +1550,30 @@ async function screenPractice(){
   }
   EV.practice.active_seconds = EV.section_active_seconds['Practice + Application']||0;
   saveEvidence();
-
-  const grid=document.createElement('div'); grid.className='summary-grid fade-in';
-  grid.innerHTML = `
-    <div class="summary-item"><b>Questions completed</b>${completed}</div>
-    <div class="summary-item"><b>Active time</b>${fmt(EV.practice.active_seconds)}</div>
-    <div class="summary-item"><b>Sign handling</b>${needsCorrective?'improved after support':'consistent throughout'}</div>
-    <div class="summary-item"><b>Factorisation</b>demonstrated across mixed-sign questions</div>
-  `;
-  c.appendChild(grid);
   pauseSectionTimer();
   endSectionTimer();
-  await continueBtn(c, 'Continue to Exam-Style');
+
+  await infoSlide(SEC, `Here's how that practice round went:`, {
+    html: `<div class="summary-grid">
+      <div class="summary-item"><b>Questions completed</b>${completed}</div>
+      <div class="summary-item"><b>Active time</b>${fmt(EV.practice.active_seconds)}</div>
+      <div class="summary-item"><b>Sign handling</b>${needsCorrective?'improved after support':'consistent throughout'}</div>
+      <div class="summary-item"><b>Factorisation</b>demonstrated across mixed-sign questions</div>
+    </div>`,
+    continueLabel: 'Continue to Exam-Style',
+  });
 }
 
 /* ---- 13. Exam-Style ---- */
 async function screenExamStyle(){
-  const el = newStep({_prevLabel:'Practice'});
+  const SEC = 'Exam-Style';
   startSectionTimer('Exam-Style', 5, {});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Exam-Style</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `Now we're moving to the final challenge. This time, I want you to answer the way you would in your real Mathematics examination.`);
-  await teacherBlock(c, `Read the question carefully, show your working clearly, and give your final answer. I won't help before your first attempt.`);
-  c.appendChild(Object.assign(document.createElement('div'), {className:'eq fade-in', innerHTML:'6x² + x − 2 = 0'}));
+  await infoSlide(SEC, `Now we're moving to the final challenge. This time, I want you to answer the way you would in your real Mathematics examination.`);
+  await infoSlide(SEC, `Read the question carefully, show your working clearly, and give your final answer. I won't help before your first attempt.`, {
+    html: `<div class="eq">6x² + x − 2 = 0</div>`,
+  });
 
-  const res = await askInput(c, {
+  const res = await askInput(slide(SEC), {
     id:'exam_question', section:'Exam-Style',
     stem:`This is an EPL-created board-style question, not an actual past exam paper. Factorise 6x² + x − 2 = 0 and give both roots.`,
     checkFn: v=>sameRootSet(v,[0.5,-2/3]),
@@ -1602,63 +1590,47 @@ async function screenExamStyle(){
     method_used: true, factorised: true, signs_correct: res.hintDepth<2, both_solutions_given: true, hint_depth: res.hintDepth
   };
   saveEvidence();
-
-  const tip=document.createElement('div'); tip.className='tip-box fade-in';
-  tip.innerHTML = `<h4>🎯 A tip from Emaan</h4><p style="margin:0;">In the exam, don't jump straight to the final answers. Show how you factorised the equation first. That way, even if you make a small mistake at the end, the examiner can still see the method you used.</p>`;
-  c.appendChild(tip);
-  const watch=document.createElement('div'); watch.className='watch-box fade-in';
-  watch.innerHTML = `<h4>👀 Watch out for this</h4><p style="margin:0;">Be careful with the signs. If you get (x + 3) = 0, your answer is x = −3, not 3. Take a second to check each bracket before writing your final answer.</p>`;
-  c.appendChild(watch);
-
   pauseSectionTimer(); endSectionTimer();
-  await continueBtn(c, 'Finish the Class');
+
+  await infoSlide(SEC, `Two things to remember before you sit a real exam:`, {
+    html: `<div class="tip-box"><h4>🎯 A tip from Emaan</h4><p style="margin:0;">In the exam, don't jump straight to the final answers. Show how you factorised the equation first. That way, even if you make a small mistake at the end, the examiner can still see the method you used.</p></div>
+      <div class="watch-box" style="margin-top:10px;"><h4>👀 Watch out for this</h4><p style="margin:0;">Be careful with the signs. If you get (x + 3) = 0, your answer is x = −3, not 3. Take a second to check each bracket before writing your final answer.</p></div>`,
+    continueLabel: 'Finish the Class',
+  });
 }
 
 /* ---- 14. Final Class Close ---- */
 async function screenClassClose(){
-  const el = newStep({_prevLabel:'Exam-Style'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Class Complete</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `That's today's class finished. Before you go, let's look at what you can do now that you couldn't confidently do at the start.`);
-
+  const SEC = 'Class Complete';
   const items = ['recognise a quadratic','understand x²','identify a, b, c','factorise','handle signs','find roots','complete harder questions','complete exam-style work'];
-  const ul=document.createElement('ul'); ul.className='checklist fade-in';
-  ul.innerHTML = items.map(i=>`<li><span class="tick">✓</span>${i}</li>`).join('');
-  c.appendChild(ul);
-
-  const grid=document.createElement('div'); grid.className='summary-grid fade-in';
-  grid.innerHTML = `
-    <div class="summary-item"><b>Understanding</b>${needsCorrective?'Improved — secure after support':'Secure'}</div>
-    <div class="summary-item"><b>Practice</b>Completed (${EV.practice.questions_completed} questions)</div>
-    <div class="summary-item"><b>Tricky signs</b>${needsCorrective?'Improved':'Handled well throughout'}</div>
-    <div class="summary-item"><b>Independent work</b>${EV.exam_style.hint_depth===0?'Demonstrated':'Demonstrated with some support'}</div>
-    <div class="summary-item"><b>Exam-style</b>Completed</div>
-    <div class="summary-item"><b>Your note</b>Saved</div>
-  `;
-  c.appendChild(grid);
+  const checklistHtml = `<ul class="checklist">${items.map(i=>`<li><span class="tick">✓</span>${i}</li>`).join('')}</ul>
+    <div class="summary-grid" style="margin-top:14px;">
+      <div class="summary-item"><b>Understanding</b>${needsCorrective?'Improved — secure after support':'Secure'}</div>
+      <div class="summary-item"><b>Practice</b>Completed (${EV.practice.questions_completed} questions)</div>
+      <div class="summary-item"><b>Tricky signs</b>${needsCorrective?'Improved':'Handled well throughout'}</div>
+      <div class="summary-item"><b>Independent work</b>${EV.exam_style.hint_depth===0?'Demonstrated':'Demonstrated with some support'}</div>
+      <div class="summary-item"><b>Exam-style</b>Completed</div>
+      <div class="summary-item"><b>Your note</b>Saved</div>
+    </div>`;
+  await infoSlide(SEC, `That's today's class finished. Before you go, let's look at what you can do now that you couldn't confidently do at the start.`, {html: checklistHtml});
 
   if(needsCorrective){
-    await teacherBlock(c, `You found signs a little tricky earlier, so we stopped and worked on them. When I checked you again, you handled them much better. That's exactly how learning should work.`);
+    await infoSlide(SEC, `You found signs a little tricky earlier, so we stopped and worked on them. When I checked you again, you handled them much better. That's exactly how learning should work.`);
   }
-  await teacherBlock(c, `Good work today, ${STUDENT_NAME}. Next time, we'll continue from where you finished today — you won't be starting all over again.`);
-  await continueBtn(c, 'Continue');
+  await infoSlide(SEC, `Good work today, ${STUDENT_NAME}. Next time, we'll continue from where you finished today — you won't be starting all over again.`);
 }
 
 /* ---- 15. Student Feedback ---- */
 async function screenStudentFeedback(){
-  const el = newStep({_prevLabel:'Class Close'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Your Feedback</div>`;
-  el.appendChild(c);
-  await teacherBlock(c, `Before you go, I'd love to know what you thought about today's class. There are no right or wrong answers — just tell me what you really think.`);
+  const SEC = 'Your Feedback';
+  await infoSlide(SEC, `Before you go, I'd love to know what you thought about today's class. There are no right or wrong answers — just tell me what you really think.`);
 
-  const q1=document.createElement('div'); q1.className='fade-in'; c.appendChild(q1);
-  const q1p=document.createElement('p'); q1p.style.fontWeight='700'; q1p.style.color='var(--navy)'; q1p.textContent='How was the class?';
-  q1.appendChild(q1p);
-  const row1=document.createElement('div'); row1.className='badge-row'; q1.appendChild(row1);
-  const opts1=[['😍','I loved it'],['🙂','I liked it'],['😐','It was okay'],['🙁',"I didn't enjoy it"]];
   await new Promise(resolve=>{
+    const c = slide(SEC);
+    const q1p=document.createElement('p'); q1p.style.fontWeight='700'; q1p.style.color='var(--navy)'; q1p.textContent='How was the class?';
+    c.appendChild(q1p);
+    const row1=document.createElement('div'); row1.className='badge-row'; c.appendChild(row1);
+    const opts1=[['😍','I loved it'],['🙂','I liked it'],['😐','It was okay'],['🙁',"I didn't enjoy it"]];
     opts1.forEach(([emo,label])=>{
       const b=document.createElement('button'); b.className='emoji-btn'; b.innerHTML=emo;
       b.title=label;
@@ -1667,11 +1639,11 @@ async function screenStudentFeedback(){
     });
   });
 
-  const q2=document.createElement('div'); q2.className='fade-in'; c.appendChild(q2);
-  const q2p=document.createElement('p'); q2p.style.fontWeight='700'; q2p.style.color='var(--navy)'; q2p.textContent='Would you like to study with Emaan again?';
-  q2.appendChild(q2p);
-  const row2=document.createElement('div'); row2.className='badge-row'; q2.appendChild(row2);
   await new Promise(resolve=>{
+    const c = slide(SEC);
+    const q2p=document.createElement('p'); q2p.style.fontWeight='700'; q2p.style.color='var(--navy)'; q2p.textContent='Would you like to study with Emaan again?';
+    c.appendChild(q2p);
+    const row2=document.createElement('div'); row2.className='badge-row'; c.appendChild(row2);
     ['Yes, definitely','Maybe','No'].forEach(label=>{
       const b=document.createElement('button'); b.className='opt-pill'; b.textContent=label;
       b.onclick=()=>{ Array.from(row2.children).forEach(x=>x.classList.remove('chosen')); b.classList.add('chosen'); EV.student_feedback.continue_with_emaan=label; saveEvidence(); resolve(); };
@@ -1679,25 +1651,21 @@ async function screenStudentFeedback(){
     });
   });
 
-  const q3=document.createElement('div'); q3.className='fade-in'; c.appendChild(q3);
-  const q3p=document.createElement('p'); q3p.style.fontWeight='700'; q3p.style.color='var(--navy)'; q3p.textContent='Tell Emaan one thing about today\'s class.';
-  q3.appendChild(q3p);
-  const ta=document.createElement('textarea'); ta.className='note-area'; ta.style.minHeight='70px'; ta.placeholder='Type here (optional)…';
-  q3.appendChild(ta);
-  const sb=document.createElement('button'); sb.className='primary-btn'; sb.textContent='Continue'; sb.style.marginTop='10px';
-  q3.appendChild(sb);
   await new Promise(resolve=>{
+    const c = slide(SEC);
+    const q3p=document.createElement('p'); q3p.style.fontWeight='700'; q3p.style.color='var(--navy)'; q3p.textContent='Tell Emaan one thing about today\'s class.';
+    c.appendChild(q3p);
+    const ta=document.createElement('textarea'); ta.className='note-area'; ta.style.minHeight='70px'; ta.placeholder='Type here (optional)…';
+    c.appendChild(ta);
+    const sb=document.createElement('button'); sb.className='primary-btn'; sb.textContent='Continue'; sb.style.marginTop='10px';
+    c.appendChild(sb);
     sb.onclick=()=>{ EV.student_feedback.open_response=ta.value.trim(); saveEvidence(); ta.disabled=true; sb.disabled=true; resolve(); };
   });
 }
 
 /* ---- 16. Parent Feedback ---- */
 async function screenParentFeedback(){
-  const el = newStep({_prevLabel:'Student Feedback'});
-  const c = sectionCard();
-  c.innerHTML = `<div class="section-label">Parent Feedback</div><p class="small-muted">This is a separate step for the parent or guardian.</p>`;
-  el.appendChild(c);
-
+  const SEC = 'Parent Feedback';
   const rows = [
     {key:'reaction', label:'How did your child react to the class?', opts:['Very positive','Positive','Neutral','Not positive']},
     {key:'usefulness', label:'How useful did this class feel for your child\'s learning?', opts:['Very useful','Somewhat useful','Not sure','Not useful']},
@@ -1706,12 +1674,18 @@ async function screenParentFeedback(){
     {key:'contact_consent', label:'May we contact you for a follow-up?', opts:['Yes','No']},
     {key:'testimonial_consent', label:'May we use your feedback as a testimonial? (separate from the above)', opts:['Yes','No']},
   ];
+  let first = true;
   for(const r of rows){
-    const wrap=document.createElement('div'); wrap.className='fade-in'; c.appendChild(wrap);
-    const p=document.createElement('p'); p.style.fontWeight='700'; p.style.color='var(--navy)'; p.textContent=r.label.replace(/\'/g,"'");
-    wrap.appendChild(p);
-    const row=document.createElement('div'); row.className='badge-row'; wrap.appendChild(row);
     await new Promise(resolve=>{
+      const c = slide(SEC);
+      if(first){
+        const note=document.createElement('p'); note.className='small-muted'; note.textContent='This is a separate step for the parent or guardian.';
+        c.appendChild(note);
+        first = false;
+      }
+      const p=document.createElement('p'); p.style.fontWeight='700'; p.style.color='var(--navy)'; p.textContent=r.label;
+      c.appendChild(p);
+      const row=document.createElement('div'); row.className='badge-row'; c.appendChild(row);
       r.opts.forEach(label=>{
         const b=document.createElement('button'); b.className='opt-pill'; b.textContent=label;
         b.onclick=()=>{ Array.from(row.children).forEach(x=>x.classList.remove('chosen')); b.classList.add('chosen'); EV.parent_feedback[r.key]=label; if(r.key==='followed_before') EV.follow_self_confirmed=label; saveEvidence(); resolve(); };
@@ -1720,9 +1694,8 @@ async function screenParentFeedback(){
     });
   }
 
-  const done=document.createElement('div'); done.className='fade-in';
-  done.innerHTML = `<div class="correct-badge" style="font-size:16px;">Thank you — the demo class is complete ✓</div>`;
-  c.appendChild(done);
+  const c = slide(SEC);
+  c.innerHTML += `<div class="correct-badge" style="font-size:16px;">Thank you — the demo class is complete ✓</div>`;
 }
 
 /* ---------------- Ask Teacher modal (prepared responses, no runtime AI) ---------------- */
