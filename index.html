@@ -143,6 +143,20 @@ body{
   transition:.15s;
 }
 #teacherChip:hover{background:var(--gold-light);transform:translateY(-1px);}
+#boardChip{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,0.10);
+  border:1px dashed rgba(255,255,255,0.55);
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:11.5px;
+  font-weight:700;
+  color:#fff;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:.15s;
+}
+#boardChip:hover{background:rgba(255,255,255,0.2);}
 /* ---------- Screen ---------- */
 #screenOuter{flex:1;position:relative;padding-top:18px;}
 #liveScreen, #reviewScreen{display:flex;flex-direction:column;gap:16px;padding-bottom:30px;}
@@ -448,8 +462,9 @@ input, textarea{-webkit-user-select:text;user-select:text;}
         <div class="brand-sub">Mathematics Demo Class</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
       <div id="timerPill"><span class="dot"></span><span id="timerText">--:--</span></div>
+      <div id="boardChip" onclick="openBoardSwitcher()" title="Demo-only control — never shown to a registered student">🏫 Demo Board: Cambridge IGCSE ▾</div>
       <div id="teacherChip" onclick="openAskTeacher()">👩‍🏫 Emaan · Ask Your Teacher</div>
     </div>
   </div>
@@ -505,6 +520,15 @@ input, textarea{-webkit-user-select:text;user-select:text;}
       <button class="gold-btn" id="joinEplBtn" style="width:100%;justify-content:center;">Join EPL Now</button>
       <button class="secondary-btn" id="continueFreeBtn" style="width:100%;justify-content:center;">Continue with Free Practice</button>
     </div>
+  </div>
+</div>
+
+<div id="boardModalBg" onclick="if(event.target===this)closeBoardSwitcher()">
+  <div id="askModal">
+    <h3>🏫 Switch Board / Qualification</h3>
+    <div class="small-muted">Demo-only — a registered student never sees this. Their board is resolved automatically from their own registration. Switching here changes command words, mark notation, working guidance and exam technique on the Exam-Style question — not the underlying maths/method itself, which is reused wherever the syllabus genuinely overlaps.</div>
+    <div id="boardList" style="display:flex;flex-direction:column;gap:8px;margin-top:6px;"></div>
+    <button class="secondary-btn" onclick="closeBoardSwitcher()">Close</button>
   </div>
 </div>
 
@@ -1920,15 +1944,16 @@ async function screenPractice(){
 /* ---- 13. Exam-Style ---- */
 async function screenExamStyle(){
   const SEC = 'Exam-Style';
+  const bp = BOARD_PROFILES[currentBoard];
   startSectionTimer('Exam-Style', 5, {});
-  await infoSlide(SEC, `Now we're moving to the final challenge. This time, I want you to answer the way you would in your real Mathematics examination.`);
+  await infoSlide(SEC, `Now we're moving to the final challenge. This time, I want you to answer the way you would in your real Mathematics examination — under ${bp.label} conventions.`);
   await infoSlide(SEC, `Read the question carefully, show your working clearly, and give your final answer. I won't help before your first attempt.`, {
-    html: `<div class="eq">6x² + x − 2 = 0</div>`,
+    html: `<div class="eq">6x² + x − 2 = 0</div><p style="margin:10px 0 0;font-size:12.5px;color:var(--ink-soft);">${bp.markNote}</p>`,
   });
 
   const res = await askInput(slide(SEC), {
     id:'exam_question', section:'Exam-Style',
-    stem:`This is an EPL-created board-style question, not an actual past exam paper. Factorise 6x² + x − 2 = 0 and give both roots.`,
+    stem:`This is an EPL-created board-style question, not an actual past exam paper. ${bp.command} the roots of the equation 6x² + x − 2 = 0, showing your method. ${bp.markNotation}`,
     checkFn: v=>sameRootSet(v,[0.5,-2/3]),
     explanation:[
       `6 × (−2) = −12. Numbers 4 and −3 multiply to −12 and add to 1. Split: 6x² + 4x − 3x − 2 = 0.`,
@@ -1940,14 +1965,14 @@ async function screenExamStyle(){
   });
 
   EV.exam_style = {
-    method_used: true, factorised: true, signs_correct: res.hintDepth<2, both_solutions_given: true, hint_depth: res.hintDepth
+    method_used: true, factorised: true, signs_correct: res.hintDepth<2, both_solutions_given: true, hint_depth: res.hintDepth, board: currentBoard,
   };
   saveEvidence();
   pauseSectionTimer(); endSectionTimer();
 
-  await infoSlide(SEC, `Two things to remember before you sit a real exam:`, {
-    html: `<div class="tip-box"><h4>🎯 A tip from Emaan</h4><p style="margin:0;">In the exam, don't jump straight to the final answers. Show how you factorised the equation first. That way, even if you make a small mistake at the end, the examiner can still see the method you used.</p></div>
-      <div class="watch-box" style="margin-top:10px;"><h4>👀 Watch out for this</h4><p style="margin:0;">Be careful with the signs. If you get (x + 3) = 0, your answer is x = −3, not 3. Take a second to check each bracket before writing your final answer.</p></div>`,
+  await infoSlide(SEC, `Two things to remember before you sit a real exam (${bp.label} style):`, {
+    html: `<div class="tip-box"><h4>🎯 A tip from Emaan</h4><p style="margin:0;">${bp.workingNote}</p></div>
+      <div class="watch-box" style="margin-top:10px;"><h4>👀 Watch out for this</h4><p style="margin:0;">Be careful with the signs. If you get (x + 3) = 0, your answer is x = −3, not 3. Take a second to check each bracket before writing your final answer. ${bp.markNote}</p></div>`,
     continueLabel: 'Finish the Class',
   });
 }
@@ -2102,6 +2127,74 @@ function closeJoinEpl(){
   document.getElementById('joinEplModalBg').style.display='none';
   if(_joinEplResolve){ const r=_joinEplResolve; _joinEplResolve=null; r(); }
 }
+
+/* ---------------- Board-aware assessment layer (DEMO ONLY) ----------------
+   Per the locked Demo Class Board-Switching Rule:
+   - Board switching is a Demo-only reviewer feature. A registered student's
+     board is resolved automatically (Student → Board → Qualification →
+     Subject → Paper → Syllabus Version → Assessment Profile) from their own
+     registration/Boarding Hub data — they are NEVER shown this switcher.
+     Any production integration must hide #boardChip/#boardModalBg entirely
+     for a normal student session and set currentBoard from that resolved
+     data instead.
+   - Switching changes command words, mark notation, working guidance and
+     exam technique — it does NOT change the underlying academic content,
+     method, or correct answer, which is reused wherever the syllabus
+     genuinely overlaps between boards.
+   - This is a single swappable profile object the engine reads from, so the
+     shared engine never hard-codes one board's marking scheme, and no
+     board needs its own copy of the class. */
+const BOARD_PROFILES = {
+  cambridge_igcse: {
+    label: 'Cambridge IGCSE',
+    command: 'Calculate',
+    markNotation: '[2]',
+    markNote: 'Cambridge shows marks in square brackets at the end of each question, e.g. [2].',
+    workingNote: 'Show your working clearly in the space given — method marks are available even if your final answer is wrong.',
+    feedbackStyle: 'concise and mark-focused',
+  },
+  edexcel_igcse: {
+    label: 'Edexcel IGCSE',
+    command: 'Work out',
+    markNotation: '(Total for Question = 2 marks)',
+    markNote: 'Edexcel shows marks as "(Total for Question = X marks)", split into method (M) and accuracy (A) marks.',
+    workingNote: 'Write every step in the working space provided — a correct method can still earn M marks even if a small slip costs the final A mark.',
+    feedbackStyle: 'step-by-step and working-focused',
+  },
+  cambridge_olevel: {
+    label: 'Cambridge O Level',
+    command: 'Calculate',
+    markNotation: '[2]',
+    markNote: 'Like Cambridge IGCSE, O Level shows marks in square brackets, e.g. [2].',
+    workingNote: 'Show your working clearly in the space given — method marks are available even if your final answer is wrong.',
+    feedbackStyle: 'concise and mark-focused',
+  },
+};
+let currentBoard = (typeof window!=='undefined' && window.EPL_DEFAULT_BOARD) || 'cambridge_igcse';
+EV.board_switch_log = EV.board_switch_log || [];
+
+function openBoardSwitcher(){
+  const list = document.getElementById('boardList');
+  list.innerHTML = '';
+  Object.entries(BOARD_PROFILES).forEach(([key, profile])=>{
+    const b = document.createElement('button');
+    b.className = 'ask-q';
+    b.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+    b.innerHTML = `<span>${profile.label}</span>` + (key===currentBoard ? '<span style="color:var(--good);">✓ current</span>' : '');
+    b.onclick = ()=>{
+      if(key !== currentBoard){
+        EV.board_switch_log.push({from:currentBoard, to:key, ts:new Date().toISOString()});
+        currentBoard = key;
+        saveEvidence();
+      }
+      document.getElementById('boardChip').textContent = '🏫 Demo Board: ' + profile.label + ' ▾';
+      closeBoardSwitcher();
+    };
+    list.appendChild(b);
+  });
+  document.getElementById('boardModalBg').style.display='flex';
+}
+function closeBoardSwitcher(){ document.getElementById('boardModalBg').style.display='none'; }
 
 /* ---------------- Boot ---------------- */
 boot();
