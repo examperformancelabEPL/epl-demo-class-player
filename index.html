@@ -850,24 +850,38 @@ function sectionElapsedMinutesOK(minMinutes){ return sectionTimer.elapsed >= min
    review. Copy/right-click friction below raises the bar a little further
    but is not a real barrier against a determined student on a second device. */
 let _hiddenSince = null;
-let _timerWasRunningBeforeHide = false;
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){
     _hiddenSince = Date.now();
-    _timerWasRunningBeforeHide = sectionTimer.running;
     if(sectionTimer.running){ pauseSectionTimer(); }
     EV.integrity.tab_hidden_events++;
     saveEvidence();
   } else {
-    if(_hiddenSince){
-      EV.integrity.tab_hidden_seconds += Math.round((Date.now()-_hiddenSince)/1000);
-      _hiddenSince = null;
-      saveEvidence();
-    }
-    if(_timerWasRunningBeforeHide){ resumeSectionTimer(); _timerWasRunningBeforeHide=false; }
-    showAwayToast();
+    handleBackInView();
   }
 });
+/* Backup triggers: some mobile browsers and in-app webviews don't fire
+   visibilitychange reliably on return (only on hide), which would leave the
+   timer stuck paused forever with nothing to resume it. focus/pageshow are
+   independent signals that also fire when the app comes back to the
+   foreground, so we use them as a safety net. handleBackInView() itself is
+   idempotent (safe to call more than once) since it only acts when the
+   timer isn't already running. */
+window.addEventListener('focus', ()=>{ if(!document.hidden) handleBackInView(); });
+window.addEventListener('pageshow', ()=>{ if(!document.hidden) handleBackInView(); });
+function handleBackInView(){
+  if(_hiddenSince){
+    EV.integrity.tab_hidden_seconds += Math.round((Date.now()-_hiddenSince)/1000);
+    _hiddenSince = null;
+    saveEvidence();
+    showAwayToast();
+  }
+  const pill = document.getElementById('timerPill');
+  const shouldBeRunning = pill && pill.style.display === 'flex' && sectionTimer.name;
+  if(shouldBeRunning && !sectionTimer.running){
+    resumeSectionTimer();
+  }
+}
 function showAwayToast(){
   const t=document.createElement('div');
   t.textContent = '⏸ Timer paused while you were away — welcome back!';
