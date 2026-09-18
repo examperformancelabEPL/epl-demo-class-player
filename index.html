@@ -429,6 +429,8 @@ textarea.note-area:focus{border-color:var(--gold);}
 .pair-note{font-size:12.5px;color:var(--ink-soft);}
 .small-muted{font-size:12.5px;color:var(--ink-soft);}
 ::selection{background:rgba(201,162,39,0.35);}
+body{-webkit-user-select:none;user-select:none;}
+input, textarea{-webkit-user-select:text;user-select:text;}
 @media (max-width:480px){
   .eq{font-size:18px;padding:11px 14px;}
   .teacher-line{font-size:15.5px;}
@@ -653,6 +655,7 @@ let EV = {
   social_clicks: [],
   follow_self_confirmed: null,
   join_epl_clicks: [],
+  integrity: {tab_hidden_events:0, tab_hidden_seconds:0, copy_attempts:0, context_menu_attempts:0},
 };
 function saveEvidence(){
   try{
@@ -837,6 +840,59 @@ function endSectionTimer(){
   document.getElementById('completingBanner').style.display='none';
 }
 function sectionElapsedMinutesOK(minMinutes){ return sectionTimer.elapsed >= minMinutes*60; }
+
+/* ---------------- Focus / integrity tracking ----------------
+   A page cannot see or block another tab, another device, or another app —
+   there is no way to detect or prevent a student looking up an answer
+   elsewhere. What IS reliable: knowing when THIS tab loses visibility (tab
+   switch, app minimised, screen off) and pausing the timer for that time so
+   it isn't silently counted as "active" work, plus logging it for teacher
+   review. Copy/right-click friction below raises the bar a little further
+   but is not a real barrier against a determined student on a second device. */
+let _hiddenSince = null;
+let _timerWasRunningBeforeHide = false;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    _hiddenSince = Date.now();
+    _timerWasRunningBeforeHide = sectionTimer.running;
+    if(sectionTimer.running){ pauseSectionTimer(); }
+    EV.integrity.tab_hidden_events++;
+    saveEvidence();
+  } else {
+    if(_hiddenSince){
+      EV.integrity.tab_hidden_seconds += Math.round((Date.now()-_hiddenSince)/1000);
+      _hiddenSince = null;
+      saveEvidence();
+    }
+    if(_timerWasRunningBeforeHide){ resumeSectionTimer(); _timerWasRunningBeforeHide=false; }
+    showAwayToast();
+  }
+});
+function showAwayToast(){
+  const t=document.createElement('div');
+  t.textContent = '⏸ Timer paused while you were away — welcome back!';
+  t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:999px;font-size:12.5px;font-weight:700;z-index:70;box-shadow:0 8px 20px -6px rgba(0,0,0,0.4);max-width:88vw;text-align:center;';
+  document.body.appendChild(t);
+  setTimeout(()=>{ t.style.transition='opacity .4s'; t.style.opacity='0'; setTimeout(()=>t.remove(),450); }, 2600);
+}
+/* Copying question content is blocked (their own typed answers/notes in
+   inputs and textareas are exempt); right-click is blocked everywhere. Both
+   are logged, not just silently swallowed, so a teacher can see how often
+   it happened. */
+document.addEventListener('copy', e=>{
+  const tag = (e.target && e.target.tagName) || '';
+  if(tag==='TEXTAREA' || tag==='INPUT') return;
+  e.preventDefault();
+  EV.integrity.copy_attempts++;
+  saveEvidence();
+});
+document.addEventListener('contextmenu', e=>{
+  const tag = (e.target && e.target.tagName) || '';
+  if(tag==='TEXTAREA' || tag==='INPUT') return;
+  e.preventDefault();
+  EV.integrity.context_menu_attempts++;
+  saveEvidence();
+});
 
 /* ---------------- Math helpers ---------------- */
 function parseNumbers(str){
@@ -1894,6 +1950,7 @@ async function screenClassClose(){
       <div class="summary-item"><b>Independent work</b>${EV.exam_style.hint_depth===0?'Demonstrated':'Demonstrated with some support'}</div>
       <div class="summary-item"><b>Exam-style</b>Completed</div>
       <div class="summary-item"><b>Your note</b>Saved</div>
+      <div class="summary-item"><b>Focus</b>${EV.integrity.tab_hidden_events===0?'Stayed on this screen throughout':EV.integrity.tab_hidden_events+' time(s) away, '+EV.integrity.tab_hidden_seconds+'s total (timer paused)'}</div>
     </div>`;
   await infoSlide(SEC, `That's today's class finished. Before you go, let's look at what you can do now that you couldn't confidently do at the start.`, {html: checklistHtml});
 
