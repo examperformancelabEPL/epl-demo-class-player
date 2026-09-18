@@ -382,6 +382,28 @@ textarea.note-area:focus{border-color:var(--gold);}
 }
 .ask-answer{background:#EFF4FB;border:1px solid #CBDCF0;border-radius:10px;padding:11px 13px;font-size:14px;line-height:1.5;color:var(--navy-2);display:none;}
 
+/* Join EPL upsell modal */
+#joinEplModalBg{position:fixed;inset:0;background:rgba(11,37,69,0.6);display:none;align-items:center;justify-content:center;z-index:95;padding:16px;}
+#joinEplModal{
+  background:var(--paper);border-radius:18px;max-width:440px;width:100%;
+  overflow:hidden;max-height:88vh;display:flex;flex-direction:column;
+  box-shadow:0 20px 50px -12px rgba(0,0,0,0.5);
+}
+#joinEplModal .jm-head{
+  background:linear-gradient(120deg, var(--navy), var(--navy-3));
+  color:#fff;padding:22px 22px 18px;position:relative;
+}
+#joinEplModal .jm-head::after{content:"";position:absolute;left:22px;right:22px;bottom:0;height:3px;background:linear-gradient(90deg,var(--gold),var(--gold-light),var(--gold));}
+#joinEplModal .jm-head h3{margin:0 0 4px;font-family:var(--serif);font-size:20px;}
+#joinEplModal .jm-head p{margin:0;font-size:13px;opacity:.85;}
+#joinEplModal .jm-body{padding:18px 22px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;}
+#joinEplModal .jm-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+#joinEplModal .jm-stat{background:#F7F4EA;border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center;}
+#joinEplModal .jm-stat b{display:block;font-size:20px;color:var(--navy);font-family:var(--serif);}
+#joinEplModal .jm-stat span{font-size:11px;color:var(--ink-soft);font-weight:700;}
+#joinEplModal .jm-foot{padding:16px 22px 20px;display:flex;flex-direction:column;gap:9px;}
+
+
 /* Name entry / landing */
 .landing-hero{text-align:center;padding:26px 10px 6px;}
 .landing-hero img.banner{max-width:100%;border-radius:14px;margin-bottom:16px;}
@@ -456,6 +478,31 @@ textarea.note-area:focus{border-color:var(--gold);}
     <div id="askQList"></div>
     <div id="askAnswerBox" class="ask-answer"></div>
     <button class="secondary-btn" onclick="closeAskTeacher()">Close</button>
+  </div>
+</div>
+
+<div id="joinEplModalBg" onclick="if(event.target===this)closeJoinEpl()">
+  <div id="joinEplModal">
+    <div class="jm-head">
+      <h3>🚀 You're just getting started</h3>
+      <p>This demo gave you a taste — here's what's waiting inside EPL.</p>
+    </div>
+    <div class="jm-body">
+      <p style="margin:0;font-size:14.5px;line-height:1.55;">Every topic on EPL comes with a full practice bank, not just a handful of questions — built and approved before you ever see it, so there's always something new to try.</p>
+      <div class="jm-stats">
+        <div class="jm-stat"><b>50+</b><span>QUESTIONS PER TOPIC</span></div>
+        <div class="jm-stat"><b>20</b><span>STANDARD</span></div>
+        <div class="jm-stat"><b>12</b><span>TRICKY</span></div>
+        <div class="jm-stat"><b>10</b><span>COMMON ERROR</span></div>
+        <div class="jm-stat"><b>8</b><span>CHALLENGE</span></div>
+        <div class="jm-stat"><b>+</b><span>PAST PAPERS, ADDED CONTINUOUSLY</span></div>
+      </div>
+      <p style="margin:0;font-size:13px;color:var(--ink-soft);line-height:1.5;">We're building this same depth across every board, qualification and subject we teach — by the time you're ready to sit your exam, the full library will be there waiting for you.</p>
+    </div>
+    <div class="jm-foot">
+      <button class="gold-btn" id="joinEplBtn" style="width:100%;justify-content:center;">Join EPL Now</button>
+      <button class="secondary-btn" id="continueFreeBtn" style="width:100%;justify-content:center;">Continue with Free Practice</button>
+    </div>
   </div>
 </div>
 
@@ -605,6 +652,7 @@ let EV = {
   parent_feedback: {},
   social_clicks: [],
   follow_self_confirmed: null,
+  join_epl_clicks: [],
 };
 function saveEvidence(){
   try{
@@ -1746,7 +1794,7 @@ async function screenPractice(){
       c.appendChild(body);
       const row=document.createElement('div'); row.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;';
       const moreBtn=document.createElement('button'); moreBtn.className='secondary-btn'; moreBtn.textContent='More Practice on This Topic';
-      moreBtn.onclick=()=>resolve(true);
+      moreBtn.onclick=async ()=>{ await openJoinEpl(); resolve(true); };
       const doneBtn=document.createElement('button'); doneBtn.className='primary-btn'; doneBtn.textContent='Continue to Exam-Style';
       doneBtn.onclick=()=>resolve(false);
       row.appendChild(moreBtn); row.appendChild(doneBtn);
@@ -1956,6 +2004,33 @@ function openAskTeacher(){
   document.getElementById('askModalBg').style.display='flex';
 }
 function closeAskTeacher(){ document.getElementById('askModalBg').style.display='none'; }
+
+/* Join EPL upsell — shown when the student asks for more practice. Either
+   choice lets them continue practising; "Join EPL Now" just also opens the
+   enrolment link in a new tab first. EPL_JOIN_URL is read from
+   window.EPL_JOIN_URL so the host page can point it at the real signup/
+   enrolment page without editing this file. */
+const EPL_JOIN_URL = (typeof window!=='undefined' && window.EPL_JOIN_URL) || 'https://www.instagram.com/examperformancelab?stkn=MXdnZG83MzFrbXkwdA%3D%3D&utm_source=qr';
+let _joinEplResolve = null;
+function openJoinEpl(){
+  return new Promise(resolve=>{
+    _joinEplResolve = resolve;
+    document.getElementById('joinEplModalBg').style.display='flex';
+    const joinBtn = document.getElementById('joinEplBtn');
+    const freeBtn = document.getElementById('continueFreeBtn');
+    joinBtn.onclick=()=>{
+      EV.join_epl_clicks.push({ts:new Date().toISOString(), from:'more_practice_popup'});
+      saveEvidence();
+      window.open(EPL_JOIN_URL, '_blank');
+      closeJoinEpl();
+    };
+    freeBtn.onclick=()=>{ closeJoinEpl(); };
+  });
+}
+function closeJoinEpl(){
+  document.getElementById('joinEplModalBg').style.display='none';
+  if(_joinEplResolve){ const r=_joinEplResolve; _joinEplResolve=null; r(); }
+}
 
 /* ---------------- Boot ---------------- */
 boot();
