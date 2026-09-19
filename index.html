@@ -980,6 +980,13 @@ function endSectionTimer(){
   document.getElementById('completingBanner').style.display='none';
 }
 function sectionElapsedMinutesOK(minMinutes){ return sectionTimer.elapsed >= minMinutes*60; }
+/* The one true class-length ceiling: 45 minutes of active timed work, plus a
+   flat 5-minute grace to finish whatever question is already in progress —
+   not 5 minutes of grace per section, which would let a slow class run to
+   45+5×(number of sections) minutes. Checked BEFORE pulling a new question
+   in every adaptive loop, so a question already underway is always allowed
+   to finish; only the NEXT one is refused once this is true. */
+function classHardCeilingReached(){ return EV.total_academic_seconds >= (45+5)*60; }
 
 /* ---------------- Focus / integrity tracking ----------------
    A page cannot see or block another tab, another device, or another app —
@@ -1580,6 +1587,7 @@ async function screenRecall(){
   let idx = 0;
   let questionsAsked = 0;
   while(true){
+    if(classHardCeilingReached()) break;
     const q = RECALL_LADDER[Math.min(idx, RECALL_LADDER.length-1)];
     let result;
     if(q.type==='input'){
@@ -1888,6 +1896,7 @@ async function screenUnderstandingCheck(){
   let qi=0;
   let correctIndependent=0;
   while(qi < UC_QUESTIONS.length || !sectionElapsedMinutesOK(5)){
+    if(classHardCeilingReached()) break;
     const q = qi < UC_QUESTIONS.length ? UC_QUESTIONS[qi] : extraCheckQuestion(qi-UC_QUESTIONS.length);
     const res = await askInput(slide(SEC), {
       id:q.id, section:'Understanding Check',
@@ -1899,7 +1908,7 @@ async function screenUnderstandingCheck(){
     if(res.attempts===1) correctIndependent++;
     qi++;
     if(qi>=UC_QUESTIONS.length && sectionElapsedMinutesOK(5)) break;
-    if(qi>=UC_QUESTIONS.length+4) break; // safety cap on extras
+    if(qi>=UC_QUESTIONS.length+7) break; // safety cap on extras (bank expanded below)
   }
   EV.section_summaries['Understanding Check'] = {questions:qi};
   saveEvidence();
@@ -1921,6 +1930,15 @@ function extraCheckQuestion(n){
     {id:'uc_extra4', stem:`One more stretch question: x² + 2x − 24 = 0 — factorise and give both roots.`, correct:[4,-6],
      explanation:[`Numbers −4 and +6 multiply to −24 and add to 2: (x − 4)(x + 6) = 0, so x = 4 or x = −6.`],
      hints:[`Find two numbers that multiply to −24 and add to 2.`]},
+    {id:'uc_extra5', stem:`x² + x − 12 = 0 — factorise and give both roots.`, correct:[-4,3],
+     explanation:[`Numbers 4 and −3 multiply to −12 and add to 1: (x + 4)(x − 3) = 0, so x = −4 or x = 3.`],
+     hints:[`Find two numbers that multiply to −12 and add to 1.`]},
+    {id:'uc_extra6', stem:`5x² + 13x − 6 = 0 — factorise and give both roots.`, correct:[0.4,-3],
+     explanation:[`5 × (−6) = −30. Numbers 15 and −2 multiply to −30 and add to 13. Split: 5x² + 15x − 2x − 6, group to get (5x − 2)(x + 3) = 0, so x = 2/5 or x = −3.`],
+     hints:[`Multiply the coefficient of x² by the constant, then find a pair that multiplies to that and adds to 13.`]},
+    {id:'uc_extra7', stem:`x² − 11x + 30 = 0 — factorise and give both roots.`, correct:[5,6],
+     explanation:[`Numbers −5 and −6 multiply to 30 and add to −11: (x − 5)(x − 6) = 0, so x = 5 or x = 6.`],
+     hints:[`Both numbers must be negative here, since they multiply to a positive but add to a negative.`]},
   ];
   return bank[Math.min(n, bank.length-1)];
 }
@@ -2032,6 +2050,15 @@ const PRACTICE_EXTRA = [
   {id:'p10', stem:`Final stretch: x² − 121 = 0 — difference of squares. Give both roots.`, correct:[11,-11],
    explanation:[`x² − 121 = (x − 11)(x + 11) = 0, so x = ±11.`],
    hints:[`121 is a perfect square (11 × 11) with no middle term.`]},
+  {id:'p11', stem:`x² − 14x + 45 = 0 — factorise and give both roots.`, correct:[5,9],
+   explanation:[`Numbers −5 and −9 multiply to 45 and add to −14: (x − 5)(x − 9) = 0, so x = 5 or x = 9.`],
+   hints:[`Both numbers must be negative here.`]},
+  {id:'p12', stem:`3x² − 2x − 8 = 0 — factorise and give both roots.`, correct:[-4/3,2],
+   explanation:[`3 × (−8) = −24. Numbers −6 and 4 multiply to −24 and add to −2. Split: 3x² − 6x + 4x − 8, group to get (3x + 4)(x − 2) = 0, so x = −4/3 or x = 2.`],
+   hints:[`Multiply the coefficient of x² by the constant, then find a pair multiplying to that and adding to −2.`]},
+  {id:'p13', stem:`x² + 7x − 18 = 0 — factorise and give both roots.`, correct:[-9,2],
+   explanation:[`Numbers 9 and −2 multiply to −18 and add to 7: (x + 9)(x − 2) = 0, so x = −9 or x = 2.`],
+   hints:[`Find two numbers that multiply to −18 and add to 7.`]},
 ];
 async function screenPractice(){
   const SEC = 'Practice + Application';
@@ -2042,6 +2069,7 @@ async function screenPractice(){
   let idx = 0;
   let correctIndependent = 0;
   while(true){
+    if(classHardCeilingReached()) break;
     const q = idx < PRACTICE_BANK.length ? PRACTICE_BANK[idx] : PRACTICE_EXTRA[(idx-PRACTICE_BANK.length) % PRACTICE_EXTRA.length];
     const res = await askInput(slide(SEC), {
       id:q.id, section:'Practice',
@@ -2058,7 +2086,7 @@ async function screenPractice(){
     const timeOK = sectionElapsedMinutesOK(8);
     const countOK = completed>=5;
     if(timeOK && countOK) break;
-    if(completed>=10) break; // safety cap
+    if(completed>=13) break; // safety cap — matches expanded pool (5 base + 8 extra)
   }
   EV.practice.active_seconds = EV.section_active_seconds['Practice + Application']||0;
   saveEvidence();
@@ -2205,6 +2233,7 @@ async function screenExamStyle(){
   let qi = 0;
   const results = [];
   while(true){
+    if(classHardCeilingReached()) break;
     const q = EXAM_PAPER[qi % EXAM_PAPER.length];
     if(q.eqHtml){
       await infoSlide(SEC, `Here's the data for Q${qi+1}:`, {html: q.eqHtml, continueLabel:'Answer the question'});
